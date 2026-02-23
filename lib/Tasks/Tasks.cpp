@@ -1,17 +1,19 @@
 #include "Tasks.h"
 #include "Signals.h"
 #include "Led.h"
-#include "Keypad4x4.h"
+#include "Button.h"
 
-#define LED1_PIN 13 // Task 1 — toggle LED  (green)
-#define LED2_PIN 12 // Task 2 — blinking LED (yellow)
-#define LED3_PIN 2  // Indicator LED (debugging)
-#define KEYPAD_FIRST 4
+#define LED1_PIN 13
+#define LED2_PIN 12
+#define BTN_TOGGLE_PIN 8
+#define BTN_DEC_PIN 7
+#define BTN_INC_PIN 2
 
 static Led led1(LED1_PIN);
 static Led led2(LED2_PIN);
-static Led led3(LED3_PIN);
-static Keypad4x4 keypad(KEYPAD_FIRST);
+static Button btnToggle(BTN_TOGGLE_PIN);
+static Button btnDec(BTN_DEC_PIN);
+static Button btnInc(BTN_INC_PIN);
 
 #define TASK2_REC_MS 50
 static volatile uint16_t task2BlinkCnt = 0;
@@ -24,24 +26,28 @@ void Tasks::initHardware()
 {
     led1.init();
     led2.init();
-    led3.init();
-    keypad.init();
+    btnToggle.init();
+    btnDec.init();
+    btnInc.init();
 }
 
-void Tasks::keypadScan()
+void Tasks::buttonScan()
 {
-    char k = keypad.getKey();
-    if (k != '\0')
-    {
-        sig_key = k;
-    }
+    if (btnToggle.isPressed())
+        sig_btnToggle = true;
+
+    if (btnDec.isPressed())
+        sig_btnDec = true;
+
+    if (btnInc.isPressed())
+        sig_btnInc = true;
 }
 
 void Tasks::buttonLed()
 {
-    if (sig_key == '1')
+    if (sig_btnToggle)
     {
-        sig_key = '\0';
+        sig_btnToggle = false; // consume signal
         led1.toggle();
         sig_led1State = led1.getState();
     }
@@ -51,7 +57,6 @@ void Tasks::blinkLed()
 {
     if (!sig_led1State)
     {
-        // LED1 is OFF -> blink LED2 at the interval set by Task 3
         task2BlinkCnt += TASK2_REC_MS;
         if (task2BlinkCnt >= (uint16_t)sig_blinkInterval)
         {
@@ -62,7 +67,6 @@ void Tasks::blinkLed()
     }
     else
     {
-        // LED1 is ON -> keep LED2 OFF
         if (sig_led2State)
         {
             led2.off();
@@ -74,15 +78,15 @@ void Tasks::blinkLed()
 
 void Tasks::stateVariable()
 {
-    if (sig_key == '3')
+    if (sig_btnInc)
     {
-        sig_key = '\0';
+        sig_btnInc = false;
         if (sig_blinkInterval + BLINK_STEP <= BLINK_MAX)
             sig_blinkInterval += BLINK_STEP;
     }
-    if (sig_key == '2')
+    if (sig_btnDec)
     {
-        sig_key = '\0';
+        sig_btnDec = false;
         if (sig_blinkInterval - BLINK_STEP >= BLINK_MIN)
             sig_blinkInterval -= BLINK_STEP;
     }

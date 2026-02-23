@@ -14,18 +14,18 @@ void setup()
     Tasks::initHardware();
 
     Scheduler::init();
-    Scheduler::addTask(Tasks::keypadScan, 50, 0);
-    Scheduler::addTask(Tasks::buttonLed, 50, 5);
-    Scheduler::addTask(Tasks::blinkLed, TASK2_REC_MS, 15);
+    Scheduler::addTask(Tasks::buttonScan,    50, 0);
+    Scheduler::addTask(Tasks::buttonLed,     50, 5);
+    Scheduler::addTask(Tasks::blinkLed,      TASK2_REC_MS, 15);
     Scheduler::addTask(Tasks::stateVariable, 50, 25);
 
-    printf("Menu:\n");
-    printf("T0: Keypad    rec=50ms  off=0ms\n");
+    printf("System ready\n");
+    printf("T0: BtnScan   rec=50ms  off=0ms\n");
     printf("T1: ButtonLED rec=50ms  off=5ms\n");
     printf("T2: BlinkLED  rec=50ms  off=15ms\n");
     printf("T3: StateVar  rec=50ms  off=25ms\n");
     printf("Idle: Report  (main loop, 1s)\n");
-    printf("Keys: 1=toggle  2=dec  3=inc\n");
+    printf("Btn: D8=toggle D7=dec D2=inc\n");
 }
 
 void loop()
