@@ -10,12 +10,12 @@ void Button::init()
 
 bool Button::isPressed()
 {
-    bool pressed = (digitalRead(_pin) == LOW); // Active LOW (pull-up)
+    bool pressed = (digitalRead(_pin) == LOW);
 
     if (pressed && !_prevPressed)
     {
         _prevPressed = pressed;
-        return true; // New press detected
+        return true;
     }
 
     _prevPressed = pressed;

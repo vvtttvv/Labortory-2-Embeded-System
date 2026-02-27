@@ -18,16 +18,14 @@
 
 #include <stdint.h>
 
-// Task 1 -> Task 2: button press event
-extern volatile bool     sig_pressDetected;      // new press detected
-extern volatile uint16_t sig_pressDuration;      // duration in ms
-extern volatile bool     sig_isLongPress;        // true if >= 500 ms
+extern volatile bool     sig_pressDetected;
+extern volatile uint16_t sig_pressDuration;
+extern volatile bool     sig_isLongPress;
 
-// Task 2 -> Task 3: statistics (reset by Task 3)
 extern volatile uint16_t sig_totalPresses;
 extern volatile uint16_t sig_shortPresses;
 extern volatile uint16_t sig_longPresses;
-extern volatile uint32_t sig_totalShortDuration; // sum of short durations
-extern volatile uint32_t sig_totalLongDuration;  // sum of long durations
+extern volatile uint32_t sig_totalShortDuration;
+extern volatile uint32_t sig_totalLongDuration;
 
 #endif

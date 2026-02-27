@@ -11,15 +11,14 @@ void setup()
     Tasks::initHardware();
 
     scheduler_init();
-    scheduler_addTask(Tasks::buttonMonitor,   10,    0);   // Task 1
-    scheduler_addTask(Tasks::pressStats,      50,    5);   // Task 2
-    scheduler_addTask(Tasks::periodicReport, 10000, 15);   // Task 3
+    scheduler_addTask(Tasks::buttonMonitor,   10,    0);
+    scheduler_addTask(Tasks::pressStats,      50,    5);
+    scheduler_addTask(Tasks::periodicReport, 10000, 15);
 
-    printf("System ready\n");
+    printf("Menu:\n");
     printf("T1: ButtonMonitor  rec=10ms     off=0ms\n");
     printf("T2: PressStats     rec=50ms     off=5ms\n");
     printf("T3: PeriodicReport rec=10000ms  off=15ms\n");
-    printf("Button: D2 | Green: D13 | Yellow: D12 | Red: D8\n");
 }
 
 void loop()
