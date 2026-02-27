@@ -1,71 +1,70 @@
 #include "Scheduler.h"
 
-Task Scheduler::_tasks[MAX_TASKS];
-uint8_t Scheduler::_taskCount = 0;
+static Task_t tasks[MAX_TASKS];
+static uint8_t taskCount = 0;
 
-void Scheduler::init()
+// -------- Timer2 setup: CTC, 1 ms tick --------
+void scheduler_init(void)
 {
-    _taskCount = 0;
+    taskCount = 0;
 
     cli();
 
     TCCR2A = 0;
     TCCR2B = 0;
-    TCCR2A |= (1 << WGM21);  // CTC mode  (clear on compare match)
+    TCCR2A |= (1 << WGM21);  // CTC mode
     TCCR2B |= (1 << CS22);   // Prescaler = 64
-    OCR2A = 249;             // Compare match value
-    TIMSK2 |= (1 << OCIE2A); // Enable Timer2 Compare-A interrupt
-    TCNT2 = 0;               // Reset counter
+    OCR2A   = 249;            // 16 MHz / 64 / 250 = 1 kHz => 1 ms
+    TIMSK2 |= (1 << OCIE2A); // Enable compare-match A interrupt
+    TCNT2   = 0;
 
-    sei(); // Re-enable interrupts
+    sei();
 }
 
-uint8_t Scheduler::addTask(TaskFunction func, uint16_t recurrence, uint16_t offset)
+// -------- Register a new task --------
+uint8_t scheduler_addTask(void (*func)(void), int rec, int offset)
 {
-    if (_taskCount >= MAX_TASKS)
+    if (taskCount >= MAX_TASKS)
         return 0xFF;
 
-    Task &t = _tasks[_taskCount];
-    t.function = func;
-    t.recurrence = recurrence;
-    t.offset = offset;
-    t.counter = (offset > 0) ? offset : recurrence;
-    t.ready = false;
-    t.enabled = true;
+    Task_t &t  = tasks[taskCount];
+    t.task_func = func;
+    t.rec       = rec;
+    t.offset    = offset;
+    t.rec_cnt   = (offset > 0) ? offset : rec;   // first fire after offset
+    t.ready     = false;
 
-    return _taskCount++;
+    return taskCount++;
 }
 
-void Scheduler::dispatch()
+// -------- Main-loop dispatcher --------
+void scheduler_loop(void)
 {
-    for (uint8_t i = 0; i < _taskCount; i++)
+    for (uint8_t i = 0; i < taskCount; i++)
     {
-        if (_tasks[i].ready && _tasks[i].enabled)
+        if (tasks[i].ready)
         {
-            _tasks[i].ready = false;
-            _tasks[i].function(); // Execute task in main-loop context
+            tasks[i].ready = false;
+            tasks[i].task_func();     // execute in main-loop context
         }
     }
 }
 
-// It's called from Timer2 ISR every 1 ms
-void Scheduler::tick()
+// -------- Called from Timer2 ISR every 1 ms --------
+void scheduler_tick(void)
 {
-    for (uint8_t i = 0; i < _taskCount; i++)
+    for (uint8_t i = 0; i < taskCount; i++)
     {
-        if (_tasks[i].enabled)
+        if (--tasks[i].rec_cnt <= 0)
         {
-            if (--_tasks[i].counter <= 0)
-            {
-                _tasks[i].ready = true;
-                _tasks[i].counter = _tasks[i].recurrence;
-            }
+            tasks[i].ready   = true;
+            tasks[i].rec_cnt = tasks[i].rec;    // reload period
         }
     }
 }
 
-//  Timer2 Compare Match A — 1 ms ISR
+// -------- Timer2 Compare Match A — 1 ms ISR --------
 ISR(TIMER2_COMPA_vect)
 {
-    Scheduler::tick();
+    scheduler_tick();
 }

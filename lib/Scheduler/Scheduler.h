@@ -5,31 +5,17 @@
 
 #define MAX_TASKS 8
 
-typedef void (*TaskFunction)(void);
+typedef struct {
+    void (*task_func)(void);
+    int rec; // period (recurrence) in ms
+    int offset; // initial offset in ms
+    int rec_cnt; // countdown counter (decremented by ISR)
+    volatile bool ready; // flag: ISR sets, dispatch clears
+} Task_t;
 
-struct Task
-{
-    TaskFunction function;
-    uint16_t recurrence;      // Period in ms
-    uint16_t offset;          // Initial offset in ms
-    volatile int16_t counter; // Countdown (decremented by ISR)
-    volatile bool ready;      // Flag set by ISR, cleared by dispatch
-    bool enabled;
-};
-
-class Scheduler
-{
-public:
-    static void init();
-
-    static uint8_t addTask(TaskFunction func, uint16_t recurrence, uint16_t offset);
-
-    static void dispatch();
-    static void tick();
-
-private:
-    static Task _tasks[MAX_TASKS];
-    static uint8_t _taskCount;
-};
+void scheduler_init(void);
+uint8_t scheduler_addTask(void (*func)(void), int rec, int offset);
+void scheduler_loop(void);
+void scheduler_tick(void);     // called from Timer2 ISR every 1 ms
 
 #endif

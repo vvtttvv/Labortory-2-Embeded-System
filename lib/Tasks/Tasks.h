@@ -4,10 +4,9 @@
 namespace Tasks
 {
     void initHardware();
-    void buttonScan();    // Task 0 — scan 3 buttons (provider)
-    void buttonLed();     // Task 1 — toggle LED1 on button press
-    void blinkLed();      // Task 2 — blink LED2 when LED1 is OFF
-    void stateVariable(); // Task 3 — adjust blink interval
+    void buttonMonitor();    // Task 1 — detect press, measure duration, green/red LED
+    void pressStats();       // Task 2 — count presses, yellow LED blink
+    void periodicReport();   // Task 3 — STDIO report every 10 s
 }
 
 #endif

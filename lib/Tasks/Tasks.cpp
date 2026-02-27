@@ -2,92 +2,155 @@
 #include "Signals.h"
 #include "Led.h"
 #include "Button.h"
+#include <Arduino.h>
+#include <stdio.h>
 
-#define LED1_PIN 13
-#define LED2_PIN 12
-#define BTN_TOGGLE_PIN 8
-#define BTN_DEC_PIN 7
-#define BTN_INC_PIN 2
+// ---- Pin definitions (match diagram.json) ----
+#define LED_GREEN_PIN   13   // led8  — short press indicator
+#define LED_YELLOW_PIN  12   // led7  — blink counter
+#define LED_RED_PIN      8   // led1  — long press indicator
+#define BTN_PIN          2   // btn2  — single button
 
-static Led led1(LED1_PIN);
-static Led led2(LED2_PIN);
-static Button btnToggle(BTN_TOGGLE_PIN);
-static Button btnDec(BTN_DEC_PIN);
-static Button btnInc(BTN_INC_PIN);
+static Led    ledGreen(LED_GREEN_PIN);
+static Led    ledYellow(LED_YELLOW_PIN);
+static Led    ledRed(LED_RED_PIN);
+static Button btn(BTN_PIN);
 
-#define TASK2_REC_MS 50
-static volatile uint16_t task2BlinkCnt = 0;
+// Task 2 internal state
+static uint8_t yellowBlinkRemaining = 0;
 
-#define BLINK_STEP 100
-#define BLINK_MIN 100
-#define BLINK_MAX 2000
-
+// --------------- initHardware -----------------
 void Tasks::initHardware()
 {
-    led1.init();
-    led2.init();
-    btnToggle.init();
-    btnDec.init();
-    btnInc.init();
+    ledGreen.init();
+    ledYellow.init();
+    ledRed.init();
+    btn.init();
 }
 
-void Tasks::buttonScan()
+// ============ Task 1: buttonMonitor  rec=10 ms  off=0 ms ============
+// State-machine (no busy-wait):
+//   IDLE     -> PRESSED  (on press edge)
+//   PRESSED  -> IDLE     (on release — short < 500 ms)
+//   PRESSED  -> LONG     (while held & elapsed >= 500 ms, red LED on)
+//   LONG     -> IDLE     (on release)
+void Tasks::buttonMonitor()
 {
-    if (btnToggle.isPressed())
-        sig_btnToggle = true;
+    enum State { IDLE, PRESSED, LONG_PRESS };
+    static State         state      = IDLE;
+    static unsigned long pressStart = 0;
 
-    if (btnDec.isPressed())
-        sig_btnDec = true;
+    bool currentState = btn.readRaw();          // true = pressed (active LOW)
 
-    if (btnInc.isPressed())
-        sig_btnInc = true;
-}
-
-void Tasks::buttonLed()
-{
-    if (sig_btnToggle)
+    switch (state)
     {
-        sig_btnToggle = false; // consume signal
-        led1.toggle();
-        sig_led1State = led1.getState();
+    case IDLE:
+        if (currentState)
+        {
+            // ---- button just PRESSED ----
+            pressStart = millis();
+            ledGreen.off();
+            ledRed.off();
+            state = PRESSED;
+        }
+        break;
+
+    case PRESSED:
+        if (!currentState)
+        {
+            // ---- released before 500 ms => SHORT press ----
+            sig_pressDuration = (uint16_t)(millis() - pressStart);
+            sig_isLongPress   = false;
+            ledGreen.on();              // green = short
+            sig_pressDetected = true;   // signal Task 2
+            state = IDLE;
+        }
+        else if (millis() - pressStart >= 500)
+        {
+            // ---- still held >= 500 ms => switch to LONG ----
+            ledRed.on();                // red ON while held
+            state = LONG_PRESS;
+        }
+        break;
+
+    case LONG_PRESS:
+        if (!currentState)
+        {
+            // ---- released after >= 500 ms => LONG press ----
+            sig_pressDuration = (uint16_t)(millis() - pressStart);
+            sig_isLongPress   = true;
+            sig_pressDetected = true;   // signal Task 2
+            state = IDLE;
+        }
+        break;
     }
 }
 
-void Tasks::blinkLed()
+// ============ Task 2: pressStats  rec=50 ms  off=5 ms ============
+// Updates counters / sums and generates a rapid yellow-LED blink
+// (5 blinks for short, 10 blinks for long).
+void Tasks::pressStats()
 {
-    if (!sig_led1State)
+    if (sig_pressDetected)
     {
-        task2BlinkCnt += TASK2_REC_MS;
-        if (task2BlinkCnt >= (uint16_t)sig_blinkInterval)
+        sig_pressDetected = false;
+        ledYellow.off();               // reset to known state
+
+        sig_totalPresses++;
+
+        if (sig_isLongPress)
         {
-            led2.toggle();
-            sig_led2State = led2.getState();
-            task2BlinkCnt = 0;
+            sig_longPresses++;
+            sig_totalLongDuration += sig_pressDuration;
+            yellowBlinkRemaining = 20; // 10 blinks = 20 toggles
         }
+        else
+        {
+            sig_shortPresses++;
+            sig_totalShortDuration += sig_pressDuration;
+            yellowBlinkRemaining = 10; //  5 blinks = 10 toggles
+        }
+    }
+
+    // Handle yellow LED blinking (one toggle per call = 50 ms step)
+    if (yellowBlinkRemaining > 0)
+    {
+        ledYellow.toggle();
+        yellowBlinkRemaining--;
     }
     else
     {
-        if (sig_led2State)
-        {
-            led2.off();
-            sig_led2State = false;
-        }
-        task2BlinkCnt = 0;
+        ledYellow.off();               // ensure LED off when done
     }
 }
 
-void Tasks::stateVariable()
+// ============ Task 3: periodicReport  rec=10000 ms  off=15 ms ============
+// Prints statistics via STDIO and resets counters.
+void Tasks::periodicReport()
 {
-    if (sig_btnInc)
+    printf("=== Raport (10s) ===\n");
+    printf("Total apasari:           %u\n", sig_totalPresses);
+    printf("Apasari scurte (<500ms): %u\n", sig_shortPresses);
+    printf("Apasari lungi (>=500ms): %u\n", sig_longPresses);
+
+    if (sig_totalPresses > 0)
     {
-        sig_btnInc = false;
-        if (sig_blinkInterval + BLINK_STEP <= BLINK_MAX)
-            sig_blinkInterval += BLINK_STEP;
+        uint32_t totalDuration = sig_totalShortDuration + sig_totalLongDuration;
+        uint16_t avgDuration   = (uint16_t)(totalDuration / sig_totalPresses);
+        printf("Durata medie:            %u ms\n", avgDuration);
     }
-    if (sig_btnDec)
+    else
     {
-        sig_btnDec = false;
-        if (sig_blinkInterval - BLINK_STEP >= BLINK_MIN)
-            sig_blinkInterval -= BLINK_STEP;
+        printf("Durata medie:            0 ms\n");
     }
+
+    // Reset statistics
+    sig_totalPresses       = 0;
+    sig_shortPresses       = 0;
+    sig_longPresses        = 0;
+    sig_totalShortDuration = 0;
+    sig_totalLongDuration  = 0;
+
+    printf("Statistici resetate.\n");
+    printf("====================\n");
 }

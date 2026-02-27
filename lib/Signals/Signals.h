@@ -2,25 +2,32 @@
  * @file Signals.h
  * @brief Shared global signals for the provider / consumer model.
  *
- *  Signal            │ Provider │ Consumer(s)
+ *  Signal                 │ Provider │ Consumer(s)
  *  -----------------------------------------------
- *  sig_btnToggle     │ Task 0   │ Task 1
- *  sig_btnDec        │ Task 0   │ Task 3
- *  sig_btnInc        │ Task 0   │ Task 3
- *  sig_led1State     │ Task 1   │ Task 2, Idle
- *  sig_led2State     │ Task 2   │ Idle
- *  sig_blinkInterval │ Task 3   │ Task 2, Idle
+ *  sig_pressDetected      │ Task 1   │ Task 2
+ *  sig_pressDuration      │ Task 1   │ Task 2
+ *  sig_isLongPress        │ Task 1   │ Task 2
+ *  sig_totalPresses       │ Task 2   │ Task 3
+ *  sig_shortPresses       │ Task 2   │ Task 3
+ *  sig_longPresses        │ Task 2   │ Task 3
+ *  sig_totalShortDuration │ Task 2   │ Task 3
+ *  sig_totalLongDuration  │ Task 2   │ Task 3
  */
 #ifndef SIGNALS_H
 #define SIGNALS_H
 
 #include <stdint.h>
 
-extern volatile bool    sig_btnToggle;     // Button 1 pressed (toggle LED1)
-extern volatile bool    sig_btnDec;        // Button 2 pressed (decrement interval)
-extern volatile bool    sig_btnInc;        // Button 3 pressed (increment interval)
-extern volatile bool    sig_led1State;     // LED1 state (green)
-extern volatile bool    sig_led2State;     // LED2 state (yellow, blink)
-extern volatile int16_t sig_blinkInterval; // Blink period in ms
+// Task 1 -> Task 2: button press event
+extern volatile bool     sig_pressDetected;      // new press detected
+extern volatile uint16_t sig_pressDuration;      // duration in ms
+extern volatile bool     sig_isLongPress;        // true if >= 500 ms
+
+// Task 2 -> Task 3: statistics (reset by Task 3)
+extern volatile uint16_t sig_totalPresses;
+extern volatile uint16_t sig_shortPresses;
+extern volatile uint16_t sig_longPresses;
+extern volatile uint32_t sig_totalShortDuration; // sum of short durations
+extern volatile uint32_t sig_totalLongDuration;  // sum of long durations
 
 #endif
