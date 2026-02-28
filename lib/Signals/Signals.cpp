@@ -1,13 +1,15 @@
 #include "Signals.h"
 
-// Task 1 -> Task 2
-volatile bool     sig_pressDetected      = false;
-volatile uint16_t sig_pressDuration      = 0;
-volatile bool     sig_isLongPress        = false;
+/* ── FreeRTOS handles ── */
+SemaphoreHandle_t pressSemaphore = NULL;
+SemaphoreHandle_t statsMutex     = NULL;
 
-// Task 2 -> Task 3
-volatile uint16_t sig_totalPresses       = 0;
-volatile uint16_t sig_shortPresses       = 0;
-volatile uint16_t sig_longPresses        = 0;
-volatile uint32_t sig_totalShortDuration = 0;
-volatile uint32_t sig_totalLongDuration  = 0;
+/* ── Shared data ── */
+volatile PressInfo pressInfo = { 0, false };
+PressStats         stats     = { 0, 0, 0, 0, 0 };
+
+void Signals_init(void)
+{
+    pressSemaphore = xSemaphoreCreateBinary();
+    statsMutex     = xSemaphoreCreateMutex();
+}
