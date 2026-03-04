@@ -2,11 +2,11 @@
 #include "Signals.h"
 #include "Led.h"
 #include "Button.h"
+#include "UartStdio.h"
 #include <Arduino.h>
 #include <Arduino_FreeRTOS.h>
 #include <semphr.h>
 
-/* ── Pin mapping (Nano-compatible) ── */
 #define LED_GREEN_PIN   13
 #define LED_YELLOW_PIN  12
 #define LED_RED_PIN      8
@@ -17,7 +17,6 @@ static Led    ledYellow(LED_YELLOW_PIN);
 static Led    ledRed(LED_RED_PIN);
 static Button btn(BTN_PIN);
 
-/* ──────────────────────────────────────────────────────── */
 void Tasks::initHardware()
 {
     ledGreen.init();
@@ -26,18 +25,25 @@ void Tasks::initHardware()
     btn.init();
 }
 
-/* ══════════════════════════════════════════════════════════
-   Task 1 — Button Monitor (period ≈ 10 ms via vTaskDelayUntil)
-   Detects press/release transitions, measures duration using
-   xTaskGetTickCount(), lights green LED (short < 500 ms) or
-   red LED (long >= 500 ms), then gives pressSemaphore to
-   signal Task 2.
-   ══════════════════════════════════════════════════════════ */
+bool Tasks::createAll()
+{
+    BaseType_t r1 = xTaskCreate(buttonMonitorTask,
+                                "BtnMon", 256, NULL, 2, NULL);
+
+    BaseType_t r2 = xTaskCreate(pressStatsTask,
+                                "Stats",  256, NULL, 2, NULL);
+
+    BaseType_t r3 = xTaskCreate(periodicReportTask,
+                                "Report", 384, NULL, 1, NULL);
+
+    return (r1 == pdPASS && r2 == pdPASS && r3 == pdPASS);
+}
+
 void Tasks::buttonMonitorTask(void *pvParameters)
 {
     (void)pvParameters;
 
-    Serial.println(F("[T1] Button monitor task started"));
+    UartStdio::println(F("[T1] Button monitor task started"));
 
     enum State { IDLE, PRESSED, LONG_PRESS, DEBOUNCE };
     State      state          = IDLE;
@@ -66,20 +72,20 @@ void Tasks::buttonMonitorTask(void *pvParameters)
         case PRESSED:
             if (!pressed)
             {
-                /* Short press detected (< 500 ms) */
+                // Short press detected (< 500 ms)
                 TickType_t elapsed = now - pressStartTick;
                 pressInfo.duration = (uint16_t)(elapsed * portTICK_PERIOD_MS);
                 pressInfo.isLong   = false;
                 ledGreen.on();
                 ledRed.off();
-                Serial.println(F("[T1] Short press detected"));
+                UartStdio::println(F("[T1] Short press detected"));
                 xSemaphoreGive(pressSemaphore);
                 debounceStart = now;
                 state = DEBOUNCE;
             }
             else if ((now - pressStartTick) >= pdMS_TO_TICKS(500))
             {
-                /* Holding for 500+ ms — switch red LED on */
+                // Holding for 500+ ms - switch red LED on
                 ledRed.on();
                 state = LONG_PRESS;
             }
@@ -88,11 +94,11 @@ void Tasks::buttonMonitorTask(void *pvParameters)
         case LONG_PRESS:
             if (!pressed)
             {
-                /* Long press released (>= 500 ms) — red stays on */
+                // Long press released (>= 500 ms) - red stays on
                 TickType_t elapsed = now - pressStartTick;
                 pressInfo.duration = (uint16_t)(elapsed * portTICK_PERIOD_MS);
                 pressInfo.isLong   = true;
-                Serial.println(F("[T1] Long press detected"));
+                UartStdio::println(F("[T1] Long press detected"));
                 xSemaphoreGive(pressSemaphore);
                 debounceStart = now;
                 state = DEBOUNCE;
@@ -100,7 +106,7 @@ void Tasks::buttonMonitorTask(void *pvParameters)
             break;
 
         case DEBOUNCE:
-            /* Ignore button for ~200 ms after release to prevent bounce */
+            // Ignore button for ~200 ms after release to prevent bounce
             if ((now - debounceStart) >= pdMS_TO_TICKS(200))
             {
                 state = IDLE;
@@ -108,34 +114,28 @@ void Tasks::buttonMonitorTask(void *pvParameters)
             break;
         }
 
-        /* Delay 1 WDT tick ≈ 16 ms (WDT tick = 16 ms, so pdMS_TO_TICKS(10) rounds to 0!) */
+        // I use vTaskDelayUntil instead of vTaskDelay, so the loop runs every ~10 ms regardless of how long the processing takes
         vTaskDelayUntil(&xLastWake, 1);
     }
 }
 
-/* ══════════════════════════════════════════════════════════
-   Task 2 — Press Statistics & Yellow LED Blink
-   Blocks on pressSemaphore (binary semaphore from Task 1).
-   Updates shared PressStats under statsMutex protection.
-   Blinks yellow LED: 5 times for short, 10 times for long.
-   ══════════════════════════════════════════════════════════ */
 void Tasks::pressStatsTask(void *pvParameters)
 {
     (void)pvParameters;
 
-    Serial.println(F("[T2] Press stats task started"));
+    UartStdio::println(F("[T2] Press stats task started"));
 
     for (;;)
     {
-        /* Block until Task 1 signals a completed press */
+        // Block until Task 1 signals a completed press
         if (xSemaphoreTake(pressSemaphore, portMAX_DELAY) == pdTRUE)
         {
-            Serial.println(F("[T2] Semaphore received, processing"));
-            /* Read press info (safe — Task 1 won't overwrite until next press) */
+            UartStdio::println(F("[T2] Semaphore received, processing"));
+            // Read press info (safe - Task 1 won't overwrite until next press)
             uint16_t duration = pressInfo.duration;
             bool     isLong   = pressInfo.isLong;
 
-            /* Update stats under mutex protection */
+            // Update stats under mutex protection
             if (xSemaphoreTake(statsMutex, portMAX_DELAY) == pdTRUE)
             {
                 stats.totalPresses++;
@@ -154,8 +154,7 @@ void Tasks::pressStatsTask(void *pvParameters)
                 xSemaphoreGive(statsMutex);
             }
 
-            /* Blink yellow LED: 5 blinks (short) or 10 blinks (long)
-               Each blink = 50ms ON + 50ms OFF using vTaskDelay */
+            // Blink yellow LED: 5 (short) or 10 (long) each blink = 50ms ON + 50ms OFF using vTaskDelay
             uint8_t blinks = isLong ? 10 : 5;
             for (uint8_t i = 0; i < blinks; i++)
             {
@@ -168,27 +167,22 @@ void Tasks::pressStatsTask(void *pvParameters)
     }
 }
 
-/* ══════════════════════════════════════════════════════════
-   Task 3 — Periodic Report (every 10 seconds via vTaskDelayUntil)
-   Reads stats under statsMutex, prints report via Serial (STDIO),
-   then resets all counters.
-   ══════════════════════════════════════════════════════════ */
 void Tasks::periodicReportTask(void *pvParameters)
 {
     (void)pvParameters;
 
-    Serial.println(F("[T3] Periodic report task started"));
+    UartStdio::println(F("[T3] Periodic report task started"));
 
     TickType_t xLastWake = xTaskGetTickCount();
 
     for (;;)
     {
-        /* Wait exactly 10 seconds using vTaskDelayUntil */
+        // Wait exactly 10 seconds using vTaskDelayUntil
         vTaskDelayUntil(&xLastWake, pdMS_TO_TICKS(10000));
 
-        Serial.println(F("[T3] 10s elapsed, generating report"));
+        UartStdio::println(F("[T3] 10s elapsed, generating report"));
 
-        /* Take a snapshot of stats under mutex, then reset */
+        // Take a snapshot of stats under mutex, then reset
         PressStats snapshot = {0, 0, 0, 0, 0};
 
         if (xSemaphoreTake(statsMutex, portMAX_DELAY) == pdTRUE)
@@ -204,22 +198,22 @@ void Tasks::periodicReportTask(void *pvParameters)
             xSemaphoreGive(statsMutex);
         }
 
-        /* Print report via STDIO (Serial) */
-        Serial.println(F("=== Report (last 10s) ==="));
-        Serial.print(F("Total presses:           ")); Serial.println(snapshot.totalPresses);
-        Serial.print(F("Short presses (<500ms):  ")); Serial.println(snapshot.shortPresses);
-        Serial.print(F("Long presses (>=500ms):  ")); Serial.println(snapshot.longPresses);
+        // Print report via stdio (printf)
+        UartStdio::println(F("=== Report (last 10s) ==="));
+        UartStdio::printf_P(PSTR("Total presses:           %u\n"), snapshot.totalPresses);
+        UartStdio::printf_P(PSTR("Short presses (<500ms):  %u\n"), snapshot.shortPresses);
+        UartStdio::printf_P(PSTR("Long presses (>=500ms):  %u\n"), snapshot.longPresses);
 
         if (snapshot.totalPresses > 0)
         {
             uint32_t totalDur = snapshot.totalShortDuration + snapshot.totalLongDuration;
             uint16_t avgDur   = (uint16_t)(totalDur / snapshot.totalPresses);
-            Serial.print(F("Average duration:        ")); Serial.print(avgDur); Serial.println(F(" ms"));
+            UartStdio::printf_P(PSTR("Average duration:        %u ms\n"), avgDur);
         }
         else
         {
-            Serial.println(F("Average duration:        0 ms"));
+            UartStdio::println(F("Average duration:        0 ms"));
         }
-        Serial.println(F("========================="));
+        UartStdio::println(F("========================="));
     }
 }

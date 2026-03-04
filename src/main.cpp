@@ -1,60 +1,35 @@
 #include <Arduino.h>
-#include <Arduino_FreeRTOS.h>
+#include <stdio.h>
+#include <avr/pgmspace.h>
+#include "UartStdio.h"
 #include "Signals.h"
 #include "Tasks.h"
 
 void setup()
 {
-    Serial.begin(9600);
+    UartStdio::init(9600);
 
-    for (volatile uint16_t i = 0; i < 30000; i++) { ; }
-
-    Serial.println(F("[INIT] FreeRTOS Button Monitor"));
+    // I used PSTR because it keeps the string in flash memory, saving precious RAM on the Arduino
+    printf_P(PSTR("[INIT] FreeRTOS Button Monitor\n"));
 
     Tasks::initHardware();
     Signals_init();
 
-    if (pressSemaphore == NULL || statsMutex == NULL)
+    if (!Signals_isReady())
     {
-        Serial.println(F("[ERR] Sync objects failed"));
+        printf_P(PSTR("[ERR] Sync objects failed\n"));
         for (;;) { ; }
     }
 
-    BaseType_t r1, r2, r3;
+    printf_P(PSTR("[INIT] Creating tasks...\n"));
 
-    Serial.println(F("[INIT] Creating tasks..."));
-    
-    r1 = xTaskCreate(Tasks::buttonMonitorTask,
-                     "BtnMon",
-                     256,
-                     NULL,
-                     2,
-                     NULL);
-
-    r2 = xTaskCreate(Tasks::pressStatsTask,
-                     "Stats",
-                     256,
-                     NULL,
-                     2,
-                     NULL);
-
-    r3 = xTaskCreate(Tasks::periodicReportTask,
-                     "Report",
-                     384,
-                     NULL,
-                     1,
-                     NULL);
-
-    if (r1 != pdPASS || r2 != pdPASS || r3 != pdPASS)
+    if (!Tasks::createAll())
     {
-        Serial.print(F("[ERR] xTaskCreate: "));
-        Serial.print(r1); Serial.print(' ');
-        Serial.print(r2); Serial.print(' ');
-        Serial.println(r3);
+        printf_P(PSTR("[ERR] Task creation failed\n"));
         for (;;) { ; }
     }
 
-    Serial.println(F("[INIT] Tasks created, scheduler will start after setup returns"));
+    printf_P(PSTR("[INIT] Tasks created, scheduler will start after setup returns\n"));
 }
 
 void loop(){}
